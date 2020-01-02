@@ -1,0 +1,70 @@
+<div class="wrapper">
+    <div class="page-title-box">
+        <div class="container-fluid">
+
+            <div class="row">
+                <div class="col-sm-12">
+                    <h4 class="page-title">Schedule</h4>
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item active">Below is the schedule of Martian</li>
+                    </ol>
+
+                </div>
+            </div>
+        </div>
+        <!-- end container-fluid -->
+
+    </div>
+    <!-- page-title-box -->
+
+    <div class="page-content-wrapper">
+        <div class="container-fluid">
+            <div class="row">
+                {{rationsData}}
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col">Schedule Date</th>
+                            <th scope="col">Packet Id</th>
+                            <th scope="col">Packet Type</th>
+                            <th scope="col">Packet Content</th>
+                            <th scope="col">Calories</th>
+                            <th scope="col">Expiry date</th>
+                            <th scope="col">Quantity In Litres</th>
+                            
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let eachDay of rationsData | keyvalue">
+                            <th scope="row">{{ eachDay.key | date:'dd/MM/yyyy' }}</th>
+                            <td colspan="6">
+                                <table class="table table-striped" >
+                                    <tbody>
+                                        <tr *ngFor="let eachPacket of rationsData[eachDay.key];">
+                                            <td>{{ eachPacket.rationId }}</td>
+                                            <td>
+                                                {{ eachPacket.packageType }}
+                                            </td>
+                                            <td>{{ eachPacket.packgeContent }}</td>
+                                            <td>{{ eachPacket.calories | number }}</td>
+                                            <td>{{ eachPacket.expiryDate | date:'dd/MM/yyyy' }}</td>
+                                            <td>{{ eachPacket.liters | number }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+
+                            
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- end row -->
+
+
+        </div>
+        <!-- end container-fluid -->
+    </div>
+    <!-- end page content-->
+
+</div>

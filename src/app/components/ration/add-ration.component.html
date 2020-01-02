@@ -1,0 +1,114 @@
+<!-- page wrapper start -->
+<div class="wrapper">
+    <div class="page-title-box">
+        <div class="container-fluid">
+
+            <div class="row">
+                <div class="col-sm-12">
+                    <h4 class="page-title">Add Ration</h4>
+                </div>
+            </div>
+        </div>
+        <!-- end container-fluid -->
+
+    </div>
+    <!-- page-title-box -->
+
+    <div class="page-content-wrapper">
+        <div class="container-fluid">
+            
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-body">
+                            <form class="form-horizontal m-t-30" [formGroup]="rationForm" (ngSubmit)="onSubmit()" autocomplete="off">
+                                <fieldset>
+                                    <div class="form-group">
+                                        <label>Packet Id
+                                            <span class="required">*</span>
+                                        </label>
+                                        <input class="form-control" placeholder="Packet Id" type="text" formControlName="packetId"
+                                            autofocus [ngClass]="{ 'is-invalid': submitted && f.packetId.errors }">
+                                        <div *ngIf="submitted && f.packetId.errors" class="invalid-feedback">
+                                            <div *ngIf="f.packetId.errors.required">This feild is required</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label>Packet Type
+                                            <span class="required">*</span>
+                                        </label>
+                                        <select class="form-control" formControlName="packetType" [ngClass]="{ 'is-invalid': submitted && f.packetType.errors }">
+                                            <option *ngFor="let packetType of packetTypes" value="{{packetType.value}}">{{packetType.title}}</option>
+                                        </select>
+                                        
+                                        <div *ngIf="submitted && f.packetType.errors" class="invalid-feedback">
+                                            <div *ngIf="f.packetType.errors.required">This feild is required</div>
+                                        </div>
+                                    </div>
+                                    <div *ngIf="f.packetType.value=='Food'">
+                                        <div class="form-group">
+                                            <label>Packet Content
+                                                <span class="required">*</span>
+                                            </label>
+                                            <input class="form-control" placeholder="Packet Content" type="text" formControlName="packetContent" autofocus [ngClass]="{ 'is-invalid': submitted && f.packetContent.errors }">
+                                            <div *ngIf="submitted && f.packetContent.errors" class="invalid-feedback">
+                                                <div *ngIf="f.packetContent.errors.required">This feild is required</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label>Calories
+                                                <span class="required">*</span>
+                                            </label>
+                                            <input class="form-control" placeholder="Calories" type="text" formControlName="calories" autofocus [ngClass]="{ 'is-invalid': submitted && f.calories.errors }">
+                                            <div *ngIf="submitted && f.calories.errors" class="invalid-feedback">
+                                                <div *ngIf="f.calories.errors.required">This feild is required</div>
+                                                <div *ngIf="f.calories.errors.min">Should be greater then 0</div>
+                                                <div *ngIf="f.calories.errors.max">Should be less or equal to 2500</div>
+                                                <div *ngIf="f.calories.errors.number">Should be number</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="form-group">
+                                            <label>Expiry Date
+                                                <span class="required">*</span>
+                                            </label>
+                                            <input class="form-control" placeholder="DD/MM/YYYY" type="text" formControlName="expiryDate" bsDatepicker [bsConfig]="{ dateInputFormat: 'DD/MM/YYYY HH:mm' }" autofocus [ngClass]="{ 'is-invalid': submitted && f.expiryDate.errors }">
+                                            <div *ngIf="submitted && f.expiryDate.errors" class="invalid-feedback">
+                                                <div *ngIf="f.expiryDate.errors.required">This feild is required</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="form-group" *ngIf="f.packetType.value=='Water'">
+                                        <label>Quantity In Liters
+                                            <span class="required">*</span>
+                                        </label>
+                                        <input class="form-control" placeholder="Liters" type="number" formControlName="liters" autofocus [ngClass]="{ 'is-invalid': submitted && f.liters.errors }">
+                                        <div *ngIf="submitted && f.liters.errors" class="invalid-feedback">
+                                            <div *ngIf="f.liters.errors.required">This feild is required</div>
+                                            <div *ngIf="f.liters.errors.min">Should be greater then 0</div>
+                                            <div *ngIf="f.liters.errors.max">Should be less or equal to 2</div>
+                                            <div *ngIf="f.liters.errors.number">Should be number</div>
+                                        </div>
+                                    </div>
+                                    
+                            
+                            
+                                    <!-- Change this to a button or input when using this as a form -->
+                                    <button type="submit" class="btn btn-lg btn-success col-lg-offset-5 col-md-offset-5 col-sm-offset-5 col-xs-offset-4">Submit</button>
+                                </fieldset>
+                            
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                    
+            </div>
+        </div>
+    </div>
+    <!-- end page content-->
+                        
+</div>
+<!-- page wrapper end -->

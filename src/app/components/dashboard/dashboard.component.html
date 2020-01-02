@@ -1,0 +1,60 @@
+<div class="wrapper">
+    <div class="page-title-box">
+        <div class="container-fluid">
+
+            <div class="row">
+                <div class="col-sm-12">
+                    <h4 class="page-title">Dashboard</h4>
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item active">Welcome to Rationing Dashboard</li>
+                    </ol>
+
+                </div>
+            </div>
+        </div>
+        <!-- end container-fluid -->
+
+    </div>
+    <!-- page-title-box -->
+
+    <div class="page-content-wrapper">
+        <div class="container-fluid">
+            <div class="row">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th scope="col">Packet Id</th>
+                            <th scope="col">Package Type</th>
+                            <th scope="col">Packet Content</th>
+                            <th scope="col">Calories</th>
+                            <th scope="col">Expiry date</th>
+                            <th scope="col">Quantity In Litres</th>
+                            <th scope="col">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let eachRation of rationsData; index as i">
+                            <th scope="row">{{ eachRation.rationId }}</th>
+                            <td>
+                                {{ eachRation.packageType }}
+                            </td>
+                            <td>{{ eachRation.packgeContent }}</td>
+                            <td>{{ eachRation.calories | number }}</td>
+                            <td>{{ eachRation.expiryDate | date:'dd/MM/yyyy' }}</td>
+                            <td>{{ eachRation.liters | number }}</td>
+                            <td>
+                                <button type="button" (click)="deleteRation(eachRation._id);" class="btn btn-danger">Delete</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- end row -->
+            
+            
+        </div>
+        <!-- end container-fluid -->
+    </div>
+    <!-- end page content-->
+    
+</div>

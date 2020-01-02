@@ -1,0 +1,43 @@
+// while (rationListObject.foodRation.length >= 0 || rationListObject.waterRation.length >= 0) {
+    //     console.log(rationListObject.foodRation.length, rationListObject.waterRation.length);
+    //     var calories = 0;
+    //     var liters = 0;
+    //     var rationForDay = [];
+    //     var needFulCalory = 2500;
+    //     var needFulWater = 2;
+    //     for (let index = 0; index < rationListObject.foodRation.length; index++) {
+    //         if (calories >= 2500) {
+    //             calories = 0;
+    //             needFulCalory = 2500;
+    //             break;
+    //         }
+    //         //if (calories < 2500 && needFulCalory <= rationListObject.foodRation[index].calories) {
+    //         if (calories < 2500 && needFulCalory <= rationListObject.foodRation[index].calories) {
+    //             calories = calories + rationListObject.foodRation[index].calories;
+    //             needFulCalory = needFulCalory - calories;
+    //             rationForDay.push(rationListObject.foodRation[index]);
+    //             rationListObject.foodRation.splice(index, 1);
+    //         }
+    //     }
+
+    //     for (let index = 0; index < rationListObject.waterRation.length; index++) {
+    //         if (liters >= 2) {
+    //             liters = 0;
+    //             needFulWater = 2;
+    //             break;
+    //         }
+    //         //if (liters < 2 && needFulWater <= rationListObject.waterRation[index].liters) {
+    //         if (liters < 2) {
+    //             liters = liters + rationListObject.waterRation[index].liters;
+    //             needFulWater = needFulWater - liters;
+    //             rationForDay.push(rationListObject.waterRation[index]);
+    //             rationListObject.waterRation.splice(index, 1);
+    //         }
+    //     }
+    //     rationSchedule.push(rationForDay);
+    //     rationForDay = [];
+    //     if (rationListObject.foodRation.length == 0 || rationListObject.waterRation.length == 0) {
+    //         callback(null, rationSchedule);
+    //         break;
+    //     }
+    // }
