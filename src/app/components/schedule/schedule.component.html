@@ -6,7 +6,7 @@
                 <div class="col-sm-12">
                     <h4 class="page-title">Schedule</h4>
                     <ol class="breadcrumb">
-                        <li class="breadcrumb-item active">Below is the schedule of Martian</li>
+                        <li class="breadcrumb-item active">Below is the schedule of Martian,Martian will survive for {{survivalDays}} days.</li>
                     </ol>
 
                 </div>
@@ -20,7 +20,15 @@
     <div class="page-content-wrapper">
         <div class="container-fluid">
             <div class="row">
-                {{rationsData}}
+                <div class="col-lg-12">
+                    <div class="col-md-4">
+                        <label>
+                            Schedule Start Date
+                        </label>
+                        <input class="form-control" (ngModelChange)="dateChanged($event)" placeholder="DD/MM/YYYY" type="text" [(ngModel)]="expiryDate" bsDatepicker [bsConfig]="{ dateInputFormat: 'DD/MM/YYYY' }"
+                            autofocus>
+                    </div>
+                </div>
                 <table class="table table-striped">
                     <thead>
                         <tr>

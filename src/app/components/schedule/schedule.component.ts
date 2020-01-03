@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AlertService, RationService } from '../../services';
-import { _ParseAST } from '@angular/compiler';
+
 
 
 @Component({
@@ -10,6 +10,8 @@ import { _ParseAST } from '@angular/compiler';
 })
 export class ScheduleComponent implements OnInit {
     rationsData = [];
+    expiryDate=new Date();
+    survivalDays=0;
     constructor(
 
         private route: ActivatedRoute,
@@ -18,18 +20,19 @@ export class ScheduleComponent implements OnInit {
         private alertService: AlertService
     ) {
 
-        this.getSchedule();
+        this.getSchedule(this.expiryDate);
 
     }
 
     ngOnInit() {
 
     }
-    getSchedule() {
-        this.rationService.getSchedule().subscribe(
+    getSchedule(startDate) {
+        this.rationService.getSchedule(startDate).subscribe(
             data => {
                 if (data) {
                     this.rationsData = data.result;
+                    this.survivalDays=Object.keys(this.rationsData).length;
                     console.log(this.rationsData);
                 }
             },
@@ -37,6 +40,15 @@ export class ScheduleComponent implements OnInit {
                 this.alertService.error(error);
             }
         );
+    }
+    
+    dateChanged(newValue){
+        var scheduleStartDate=newValue;
+        if (newValue === null || newValue == ""){
+            this.expiryDate = new Date();
+            scheduleStartDate=this.expiryDate; 
+        }
+        this.getSchedule(scheduleStartDate);
     }
     
 }

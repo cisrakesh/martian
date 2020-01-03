@@ -74,7 +74,7 @@
                                             <label>Expiry Date
                                                 <span class="required">*</span>
                                             </label>
-                                            <input class="form-control" placeholder="DD/MM/YYYY" type="text" formControlName="expiryDate" bsDatepicker [bsConfig]="{ dateInputFormat: 'DD/MM/YYYY HH:mm' }" autofocus [ngClass]="{ 'is-invalid': submitted && f.expiryDate.errors }">
+                                            <input class="form-control" placeholder="DD/MM/YYYY" type="text" formControlName="expiryDate" bsDatepicker [bsConfig]="{ dateInputFormat: 'DD/MM/YYYY' }" autofocus [ngClass]="{ 'is-invalid': submitted && f.expiryDate.errors }">
                                             <div *ngIf="submitted && f.expiryDate.errors" class="invalid-feedback">
                                                 <div *ngIf="f.expiryDate.errors.required">This feild is required</div>
                                             </div>

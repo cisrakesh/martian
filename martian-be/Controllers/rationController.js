@@ -2,16 +2,18 @@
 
 const mongoose = require('mongoose');
 const { Ration} = require('../models/ration');
-const bcrypt = require('bcrypt');
-const { check, validationResult } = require('express-validator');
+const { check, validationResult, oneOf } = require('express-validator');
 var async = require("async");
 var dateFormat = require('dateformat');
 const connUri = process.env.MONGO_LOCAL_CONN_URL;
 
-var getFoodRationPackets = function (callback) {
-    Ration.find({ "packageType": "Food" }, null, { sort: { expiryDate: 1, calories: -1 } }, (err, foodRations) => {
+//get list of food packets which are not expired 
+var getFoodRationPackets = function (startDate,callback) {
+    
+    Ration.find({ "packageType": "Food",expiryDate: { $gte: dateFormat(startDate, "yyyy-mm-dd")} }, null, { sort: { expiryDate: 1, calories: -1 } }, (err, foodRations) => {
         if (!err) {
             var totalAvailableCalory=0;
+            //loop through each food packet to add timestamp
             async.forEachOf(foodRations, function (eachPacket, key, forEachCallback) {
                 totalAvailableCalory = parseInt(totalAvailableCalory)+ parseInt(eachPacket.calories);
                 eachPacket.expiryDateTs = new Date(new Date(eachPacket.expiryDate).toDateString()).getTime();
@@ -27,6 +29,7 @@ var getFoodRationPackets = function (callback) {
     });
 };
 
+//get water packets
 var getWaterRationpackets = function (callback) {
     Ration.find({ "packageType": "Water" }, (err, waterRations) => {
         if (!err) {
@@ -45,165 +48,100 @@ var getWaterRationpackets = function (callback) {
     });
 };
 
-var findFoodPacket = function (foodRationObject, neddedCalory, whilstCallback){
-    var tempRationObject = { foodRation: [], totAvailableCalory:0};
-    var rationForDay=[];
-    //console.log(foodRationObject);
-    async.forEachOf(foodRationObject.foodRation, function (eachPacket, key, forEachCallback) {
-        
-        //if needed calory is more then availaible calory , nothing can be done 
-        if (neddedCalory > foodRationObject.totAvailableCalory){
-            forEachCallback("done");
-            //if packet calory is eqaul to needed calory
-        }else if (eachPacket.calories == neddedCalory){
-            
-            neddedCalory -= parseInt(eachPacket.calories);
-            rationForDay.push(eachPacket);
-            forEachCallback("done");
-            //if packet calory is less then needed calory
-        } else if (eachPacket.calories <= neddedCalory){
-            neddedCalory -= parseInt(eachPacket.calories);
-            rationForDay.push(eachPacket);
-            //forEachCallback("done");
-        }else{
-            tempRationObject.foodRation.push(eachPacket);
-            tempRationObject.totAvailableCalory += parseInt(eachPacket.calories)
-            forEachCallback();    
-        }
-        
-    }, function (err) {
-        //if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-        
-    });
-    
-    return { neddedCalory: neddedCalory, rationForDay: rationForDay, tempRationObject: tempRationObject, whilstCallback:whilstCallback };
-    
-};
-
-var createSchedule=function(rationListObjectParam, callback){
-    var rationSchedule = [];
-    var dayRation=[];
-    var neededCalory=2500;
-    var rationListObject = rationListObjectParam;
-    
-    var i=0;
-    console.log(rationListObject.foodRation.length);
-    async.whilst(function test(cb) {
-        cb(null, (rationListObject.foodRation.length > 0 &&  rationListObject.waterRation.length > 0));
-    },function(whilstCallback){
-        console.log(rationListObject.foodRation.length+" > 0 && "+rationListObject.waterRation.length+" > 0");
-        
-        var something = findFoodPacket(rationListObject, neededCalory,whilstCallback);
-        console.log(">>>>>>>>>>>>>>>>>>>>>>>>");
-        console.log(91, something);
-        console.log("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-        rationListObject.foodRation = something.tempRationObject.foodRation;
-        rationListObject.totAvailableCalory = something.tempRationObject.totAvailableCalory;
-        dayRation = dayRation.concat(something.rationForDay);
-        neededCalory = something.neddedCalory;
-        if (something.neddedCalory<=0){
-            rationSchedule.push(dayRation);
-            neededCalory=2500;
-            dayRation=[];
-        }
-        something.whilstCallback();
-    },function(err,data){
-        if (err) console.log(err);
-        
-        console.log(rationListObject.foodRation.length);
-        
-        callback(null, rationSchedule);
-    });
-    
-    
-};
-
+//function to create a bunch of rations/food packet which can be consumed in a day as per needed callory
 var findFoodPacketSeries = function (rationListObjectParam, rationDayTs, neededCalory, parentWhileCallback){
-    var dayRation = [];
-    var rationListObject = rationListObjectParam;
-    var remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-    var scheduleAble=true;
-    
+    var dayRation = [];  // temp variable which holds rastion of the day
+    var rationListObject = rationListObjectParam; // array of available ration 
+    var remaningRationObject = { 
+        foodRation: [], // temp array of the ration , which dosen't get consumed in current day/loop
+        totAvailableCalory: 0 //total callory which is availbale from food packets
+        }; 
+
+    //using async series, to make sure each process executes completely before another starts    
     async.series(
         [
+            //first block of series will try to find/consume the food packets which are going to expire on given date itself. if that is the case , we will add them in given date ration
             function(seriesCB){
-                //get food packet whose expiry equals to rationDayTs
+                //execute a aync for-each loop to go each packet of the food
                 async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                        //if needed calory is more then availaible calory , nothing can be done 
+                    //if needed calory is more then total availaible calory , nothing can be done . rationing is not possible further
                     if (neededCalory > rationListObject.totAvailableCalory && rationDayTs == eachPacket.expiryDateTs) {
-                        //return forEachCallback("done");
-                        //if packet calory is eqaul to needed calory
+                        forEachCallback("done");
+                    //else if needed callory is greater then 0 , and packet is going to expire by today
                     } else if (neededCalory > 0 && rationDayTs == eachPacket.expiryDateTs){
-                        dayRation.push(eachPacket);
-                        neededCalory -= parseInt(eachPacket.calories);
-                        
+                        dayRation.push(eachPacket); //add food packet to the today ration stack
+                        neededCalory -= parseInt(eachPacket.calories); //subtract the needed calory by packest calory
+                        forEachCallback();    
+                    //if food packet is not going to expire today , add it to un-used/remaning ration stack
                     } else if (eachPacket.expiryDateTs>rationDayTs){
-                        remaningRationObject.foodRation.push(eachPacket);
-                        remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories)
-                        
-                    }
-                    forEachCallback();
-                }, function (err) {
-                    if (err){
-                        scheduleAble=false;
-                    } 
-                    rationListObject.foodRation = remaningRationObject.foodRation;
-                    rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
-                    remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-                    seriesCB();
-                });
-                
-            },
-            function (seriesCB){
-                //get food packet which get fits exactly to the needed callory
-                async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                    if (eachPacket.calories == neededCalory) {
-                        neededCalory = neededCalory - parseInt(eachPacket.calories);
-                        dayRation.push(eachPacket);
-                    } else {
-                        remaningRationObject.foodRation.push(eachPacket);
-                        remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories);
-                        
-                    }
-                    forEachCallback();
-                }, function (err) {
-                    if (err) {
-                        scheduleAble = false;
+                        remaningRationObject.foodRation.push(eachPacket); //add food packet to remaning ration stack
+                        remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories); //add packet calory to available calory
+                        forEachCallback();
                     }
                     
+                }, function (err) {
+                    if (err){
+                    } 
+                    //reset foodration with remaning food ration , so that it can be used in next block of series
                     rationListObject.foodRation = remaningRationObject.foodRation;
+                    //reset total available ration with un-used/ramaing calories
                     rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
+                    //reset remaing ration object to default one
                     remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
                     seriesCB();
                 });
                 
             },
+            //block of series which identifies best needed food packet as per needed calory.
+            function (seriesCB){
+                //if still we need some calory to survive
+                if (neededCalory>0){
+                    //execute a aync for-each loop to go each packet of the food, and find best fit packet as per needed caloory
+                    async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
+                        //if packet callory is equals to needed callory
+                        if (eachPacket.calories == neededCalory) {
+                            neededCalory = neededCalory - parseInt(eachPacket.calories);
+                            dayRation.push(eachPacket);
+                        } else {
+                            remaningRationObject.foodRation.push(eachPacket);
+                            remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories);
+                            
+                        }
+                        forEachCallback();
+                    }, function (err) {
+                        if (err) {
+                        }
+                        
+                        rationListObject.foodRation = remaningRationObject.foodRation;
+                        rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
+                        remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
+                        seriesCB();
+                    });
+                }else{
+                    seriesCB();
+                }
+                
+            },
+            //get the food packet , which serves nearest calory to the needed food callory
             function (seriesCB){
                 
                 if (rationListObject.foodRation.length > 0 && neededCalory>0){
-                    var selectedKey = "";
-                    var caloryDiff = neededCalory;
-                    console.log(rationListObject.foodRation);
+                    var selectedKey = ""; //index of selected food packet, it may change as loop proceeds
+                    var diff = neededCalory; //diff in calory which is needed
+                    
+                    //loop through the ration object , to go by each food packet. and get nearest calory packet to the needed calory
                     async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                        var currCaloryDiff = neededCalory - eachPacket.calories;
-                        if (selectedKey==""){
+                        
+                        var newdiff = Math.abs(neededCalory - eachPacket.calories);
+                        //if no index is selected or diff in calory from curr packet is less then previous packet
+                        if (selectedKey == "" || newdiff < diff) {
                             selectedKey = key;
-                            caloryDiff = currCaloryDiff;
-                        } else if (currCaloryDiff == 0 && currCaloryDiff != caloryDiff){
-                            selectedKey = key;
-                            caloryDiff = currCaloryDiff;
-                        } else if (currCaloryDiff < 0 && currCaloryDiff > caloryDiff){
-                            selectedKey = key;
-                            caloryDiff = currCaloryDiff;
-                        } else if (currCaloryDiff > 0 && currCaloryDiff > caloryDiff){
-                            selectedKey = key;
-                            caloryDiff = currCaloryDiff;
-                        }
+                            diff = newdiff;
+                        } 
                                                
                         forEachCallback();
                     }, function (err) {
                         if (err) {
-                            scheduleAble = false;
                         }
                         
                         //if (selectedKey!=""){
@@ -225,8 +163,9 @@ var findFoodPacketSeries = function (rationListObjectParam, rationDayTs, neededC
                 }
                 
             },
+            
             function (seriesCB){
-                
+                //recursively call function if still needed caloory is greater then 0, and there calory available to allocate
                 if (neededCalory > 0 && rationListObjectParam.totAvailableCalory > neededCalory){
                     var x = findFoodPacketSeries(rationListObject, rationDayTs, neededCalory, seriesCB);
                     remaningRationObject.foodRation = x.remaningRationObject.foodRation;
@@ -249,7 +188,7 @@ var findFoodPacketSeries = function (rationListObjectParam, rationDayTs, neededC
             }
         );
         
-    return { "whileCallbackOne": parentWhileCallback, scheduleAble: scheduleAble, rationDayTs: rationDayTs, remaningRationObject: remaningRationObject, neededCalory: neededCalory, dayRation: dayRation };
+    return { "whileCallbackOne": parentWhileCallback,  rationDayTs: rationDayTs, remaningRationObject: remaningRationObject, neededCalory: neededCalory, dayRation: dayRation };
 }
 
 var findWaterPacketSeries = function (rationListObjectParam, dayRation, neededWater, parentWhileCallback) {
@@ -286,22 +225,14 @@ var findWaterPacketSeries = function (rationListObjectParam, dayRation, neededWa
 
                 if (rationListObject.waterRation.length > 0 && neededWater > 0) {
                     var selectedKey = "";
-                    var waterDiff = neededWater;
+                    var diff = neededWater;
                     async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
-                        var currWaterDiff = neededWater - parseInt(eachPacket.liters);
-                        if (selectedKey == "") {
+                        var newdiff = Math.abs(neededWater - eachPacket.liters);
+                        //if no index is selected or diff in liters from curr packet is less then previous packet
+                        if (selectedKey == "" || newdiff < diff) {
                             selectedKey = key;
-                            waterDiff = currWaterDiff;
-                        } else if (currWaterDiff == 0 && currWaterDiff != waterDiff) {
-                            selectedKey = key;
-                            waterDiff = currWaterDiff;
-                        } else if (currWaterDiff < 0 && currWaterDiff > waterDiff) {
-                            selectedKey = key;
-                            waterDiff = currWaterDiff;
-                        } else if (currWaterDiff > 0 && currWaterDiff > waterDiff) {
-                            selectedKey = key;
-                            waterDiff = currWaterDiff;
-                        }
+                            diff = newdiff;
+                        } 
 
                         forEachCallback();
                     }, function (err) {
@@ -354,47 +285,58 @@ var findWaterPacketSeries = function (rationListObjectParam, dayRation, neededWa
     return { "whileCallbackOne": parentWhileCallback, remaningRationObject: remaningRationObject, neededWater: neededWater, dayRation: dayRation };
 }
 module.exports = {
+    //validate method , which returns a middleware to check the validation of the fields
     validate:(method)=>{
-        console.log(method.body);
         switch (method) {
-
-            case 'createUser': {
+            //for adding ration
+            case 'addRation': {
                 return [
-                    check('name', "userName is required").exists(),
-                    check('password', "Password is required").exists(),
-                    check('roleId', "Role is required").exists(),
-                    check('email', 'Invalid email').exists().isEmail(),
-                    check('phone').optional().isInt(),
-                    check('status').optional().isIn(['enabled', 'disabled']),
+                    check('packetId', "Packet Id should have atleast one character").isLength({ min: 1 }),
+                    check('packetId', "packet Id is required").exists(),
+                    check('packetType', "Packet Type is required").exists(),
+                    check('packetType', "Packet type should be Food or Water").isIn(['Food', 'Water']),
+                    
+                    oneOf([
+                        [
+                            check('packetContent', "packet Content is required").exists().isLength({min:1}),
+                            check('calories', "Calories is required and should be number").exists().isInt({ min: 1 }),
+                            check('expiryDate', "Expiry date is required").exists()
+                            
+                        ],
+                        [
+                            check('liters', "Water quantity is required and should be number").exists().isInt({ min: 1 }),
+                        ]
+                        
+                    ], "Please Fill Out All Fields"),
+                    
+                ];
+                break;
+            
+            }
+            case 'deleteRation': {
+                return [
+                check('id', "Id is required").exists(),
+                check('id', "Id should have atleast one character").isLength({ min: 1 })
                 ];
                 break;
             }
-            case 'updatePassword':{
-                
-                return [
-                    check('oldPassword', "Old Password is required").exists().isLength({min:1}),
-                    check('password', "Password is required").exists().isLength({ min: 1 }),
-                    check('confPassword', "Confirm Password is required").exists().isLength({ min: 1 }),
-                    check('confPassword', "Confirm password is not same is Password").custom((confPassword,{req,loc,path}) => {
-                        if (confPassword !== req.body.password) {
-                            // throw error if passwords do not match
-                            return false;
-                        } else {
-                            return true;
-                        }
-                    })
-                ]   
-            }
+            
         }
+        
     },
     add: (req, res) => {
         
         let result = {};
         let status = 201;
-        
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(422).send({ errors: errors.array(), message: 'Something Went wrong , please try again later' })
+        }
         const rationModel = new Ration(); // document = instance of a model
+        
         rationModel.rationId = req.body.packetId;
         rationModel.packageType = req.body.packetType;
+        
         if (rationModel.packageType=="Food"){
             rationModel.packgeContent = req.body.packetContent;
             rationModel.calories = req.body.calories;
@@ -409,7 +351,7 @@ module.exports = {
         }
         
         
-        
+        //save ration
         rationModel.save((err, ration) => {
             if (!err) {
                 result.status = status;
@@ -426,7 +368,7 @@ module.exports = {
         
     },
     getAll: (req, res) => {
-        //mongoose.connect(connUri, { useNewUrlParser: true,useUnifiedTopology: true }, (err) => {
+        //get all type of ration
         Ration.find({}, (err, rations) => {
             if (!err) {
                 res.send(rations);
@@ -434,98 +376,15 @@ module.exports = {
             console.log('Error', err);
             }
         });
-        //});
-    },
-    updateCurrentUser: (req, res)=>{
-        const payload = req.decoded;
         
-        var result={};
-        if(payload){
-            User.findByIdAndUpdate(payload._id, req.body, function (err, updateRes) {
-
-                if (err) {
-                    status=401;
-                    result.error=err;
-                }else if(updateRes !==null){
-                    status = 200;
-                    result.message = 'User updated successfully';
-                }else {
-                    console.log(updateRes);
-                    status = 404;
-                    result.message = 'Unable to update , Please try again later';
-                }
-                result.status = status;
-                res.status(status).send(result);
-            });
-        }else{
-            status = 404;
-            result.status=status;
-            result.error = 'User not found';
-            res.status(status).send(result);
-        }
-    },
-    updatePassword:(req,res)=>{
-        const payload = req.decoded;
-        var result = {};
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(422).send({ errors: errors.array(),message : 'Something Went wrong , please try again later' })
-        }
-        
-        let status = 200;
-        
-        User.findOne({ _id: payload._id }, (err, user) => {
-            
-            if (!err && user) {
-                // We could compare passwords in our model instead of below
-                bcrypt.compare(req.body.oldPassword, user.password).then(match => {
-                    if (match) {
-                        status = 200;
-                        
-                        user.password = user.generateHash(req.body.password);
-                    
-                        user.save(function (err) {
-                            if (err) {
-                                status = 422;
-                                result.err = err;
-                                result.message = "Something Went wrong , Please try again later!";
-                                res.status(status).send(result);
-                            }else{
-                                result.message = "Password Updated successfuly";
-                                user.password = "";
-                                delete user.password;
-                                result.result = user;
-                                res.status(status).send(result);
-                            }
-                        });
-                        
-                    } else {
-                        status = 422;
-                        result.status = status;
-                        result.message = "Password dosen't matched";
-                        res.status(status).send(result);
-                    }
-                    //res.status(status).send(result);
-                }).catch(err => {
-                    status = 500;
-                    result.status = status;
-                    result.err = err;
-                    result.message = "Something Went wrong , Please try again later!";
-                    res.status(status).send(result);
-                });
-            } else {
-                status = 422;
-                result.status = status;
-                result.error = err;
-                result.message = "Something Went wrong , Please try again later!";
-                res.status(status).send(result);
-            }
-        });
     },
     deleteRation:(req,res)=>{
         let result = {};
         let status = 201;
-        console.log(req);
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(422).send({ errors: errors.array(), message: 'Something Went wrong , please try again later' })
+        }
         Ration.remove({ _id: req.query.id }, function (err) {
             if (!err) {
                 result.status = status;
@@ -540,25 +399,38 @@ module.exports = {
             res.status(status).send(result);
         });
     },
-    
+    //function prepare schedule of the martian
     getSchedule:(req,res)=>{
        
         var status = 201;
         var rationListObject="";
         var result={};
         var rationSchedule = {};
+        
+        //if start of schedule is not provided get todays date as default
+        if (typeof req.query.startDate=="undefined" || req.query.startDate === null || req.query.startDate==""){
+            var startDate=new Date(new Date().toDateString()).getTime();
+        }else{
+            var startDate=parseInt(req.query.startDate);  
+            startDate=new Date(new Date(startDate).toDateString()).getTime();  
+        }
+        
+        //start a series of async functions, as all of them are depended on the result of previous functions
         async.series(
             [
+                
                 function (seriesCallback) {
                     
                     async.parallel({
-                        foodRation: getFoodRationPackets,
-                        waterRation: getWaterRationpackets
+                        foodRation: getFoodRationPackets.bind(null,startDate), //get all food packets
+                        waterRation: getWaterRationpackets //get all water packets
                     }, function (err, rationList) {
+                        //create a generalised object of the packets which will be used for the rationing
                         rationListObject = { "foodRation": rationList.foodRation.packets,
                                             "waterRation": rationList.waterRation.packets, 
-                                            "totAvailableCalory": rationList.foodRation.totAvailableCalory,
-                                            "totAvailableWater": rationList.waterRation.totAvailableWater};
+                                            "totAvailableCalory": rationList.foodRation.totAvailableCalory,//total available calories from all food packets
+                                            "totAvailableWater": rationList.waterRation.totAvailableWater //total available water from all the packets
+                                        };
                         if (!err) {
                             seriesCallback(null, rationList);
                         } else {
@@ -566,34 +438,70 @@ module.exports = {
                         }
                     });
                 },
-                function (seriesCallback) {
+                function (seriesCallback) {  //begin rationing
                     
-                    forday = new Date().getTime();
-                    var rationForDay=new Date(new Date().toDateString()).getTime();
                     
-                   // callback(null, forday);
+                    var rationForDay=startDate; //start date of teh rationing
+                    //new Date(new Date(startDate).toDateString()).getTime();
                     
+                   
+                    /*execution of async while loop , untill food packets are available 
+                    *along with available calory should be greater or equal to 2500
+                    *water packets should also be available
+                    * and those water packets should be providing more then or qual to 2 liters
+                    * this loop will fetch rations to be utilised per day
+                    */
                     async.whilst(function test(cb) {
                         cb(null, (rationListObject.foodRation.length > 0 && rationListObject.totAvailableCalory >= 2500 && rationListObject.waterRation.length > 0 && rationListObject.totAvailableWater >= 2));
                         //cb(null, (i<=2));
                     }, function (whilstCallBackOne) {
-                        var x = findFoodPacketSeries(rationListObject, rationForDay, 2500, whilstCallBackOne);
-                        rationListObject.foodRation = x.remaningRationObject.foodRation;
-                        rationListObject.totAvailableCalory = x.remaningRationObject.totAvailableCalory;
-                        //rationSchedule[rationForDay] = x.dayRation;
+                        /*
+                        *call function which will fetch the needed food packet , which wil let martian survive for the day.
+                        * as a parameter we are passing :-
+                        * param 1(rationListObject): currently available list of ration packets
+                        * param 2(rationForDay):Time stamp of the day , for which rationing is getting done
+                        * param 3 (): Needed calories to sruvive the day
+                        * param 4 (whilstCallBackOne) : call back function which ensure the loop is finished completely.
+                        * it will return a object which contains the food packets available ,and calories available from them. 
+                        * And contains array of food packets which has to be consumed for the given day
+                        */
+                        var neededFoodPckts = findFoodPacketSeries(rationListObject, rationForDay, 2500, whilstCallBackOne);
+                        
+                        //reset ration list with unused food packets , it will be used in next days/loops
+                        rationListObject.foodRation = neededFoodPckts.remaningRationObject.foodRation; 
+                        //reset the available colory with remaning calory , will be used in next days/loops
+                        rationListObject.totAvailableCalory = neededFoodPckts.remaningRationObject.totAvailableCalory;
                         
                         
-                        var y = findWaterPacketSeries(rationListObject, x.dayRation, 2, x.whileCallbackOne);
-                        rationListObject.waterRation = y.remaningRationObject.waterRation;
-                        rationListObject.totAvailableWater = y.remaningRationObject.totAvailableWater;
-                        rationSchedule[rationForDay] = y.dayRation;
+                        /*
+                        * call a function which will fetch the needed water packets to let martion survive for the day
+                        * as a parameter we are passing:-
+                        * param 1(rationListObject): currently available list of ration packets
+                        * param 2(neededFoodPckts.dayRation):Food Packets which is used to survive for the day
+                        * param 3 (): water quantity in liters, which is needed to survive for the day.
+                        * param 4 (neededFoodPckts.whileCallbackOne): call back function to ensure loop is executed completed
+                        * it will return a object with remaning water water ration and total available water in liters
+                        */
+                        var neededWaterPckts = findWaterPacketSeries(rationListObject, neededFoodPckts.dayRation, 2, neededFoodPckts.whileCallbackOne);
+                        
+                        //reset ration list with un-used water packets
+                        rationListObject.waterRation = neededWaterPckts.remaningRationObject.waterRation;
+                        //reset total available water with remaing quantity of water.
+                        rationListObject.totAvailableWater = neededWaterPckts.remaningRationObject.totAvailableWater;
+
+                        //if needed callory and water is not fulfilled , it means martian is not able to survive this day.  and ration is incomplete for given day.
+                        if (neededFoodPckts.neededCalory <= 0 && neededWaterPckts.neededWater<=0){
+                            //if needed callory and water is fullfiled , push the fetched ration in the scheduled array.
+                            rationSchedule[rationForDay] = neededWaterPckts.dayRation;
+                        }
+                        //increase the surivival day timestamp by ading miliseconds
                         rationForDay += parseInt((24 * 60 * 60 * 1000));
-                        y.whileCallbackOne();
+                        
+                        neededWaterPckts.whileCallbackOne();//call the callback back to flag that current loop is executed.
                         //schedulingStatus.whilstCallBackOne();
                     },function(err,data){
                         seriesCallback(null,rationSchedule);    
                     });
-                    //createSchedule(rationListObject, seriesCallback);
                 }
             ], function (error, data) {
                 
@@ -603,7 +511,7 @@ module.exports = {
                     result.error = err;
                 } else {
                     result.status = status;
-                    result.message = "Ration Added succesfully!";
+                    result.message = "Schedule of ration!";
                     result.result = data[1];
                 }
                 //console.log(result)
