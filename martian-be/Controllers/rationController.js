@@ -7,284 +7,18 @@ var async = require("async");
 var dateFormat = require('dateformat');
 const connUri = process.env.MONGO_LOCAL_CONN_URL;
 
-//get list of food packets which are not expired 
-var getFoodRationPackets = function (startDate,callback) {
-    
-    Ration.find({ "packageType": "Food",expiryDate: { $gte: dateFormat(startDate, "yyyy-mm-dd")} }, null, { sort: { expiryDate: 1, calories: -1 } }, (err, foodRations) => {
-        if (!err) {
-            var totalAvailableCalory=0;
-            //loop through each food packet to add timestamp
-            async.forEachOf(foodRations, function (eachPacket, key, forEachCallback) {
-                totalAvailableCalory = parseInt(totalAvailableCalory)+ parseInt(eachPacket.calories);
-                eachPacket.expiryDateTs = new Date(new Date(eachPacket.expiryDate).toDateString()).getTime();
-                forEachCallback();
-            }, function (err) {
-                if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-                callback(null, { "packets": foodRations, "totAvailableCalory": totalAvailableCalory });
-            });
-            
-        } else {
-            callback(err);
-        }
-    });
-};
 
-//get water packets
-var getWaterRationpackets = function (callback) {
-    Ration.find({ "packageType": "Water" }, (err, waterRations) => {
-        if (!err) {
-            var totalAvailableWater = 0;
-            async.forEachOf(waterRations, function (eachPacket, key, forEachCallback) {
-                totalAvailableWater += parseInt(eachPacket.liters);
-                forEachCallback();
-            }, function (err) {
-                if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-                callback(null, { "packets": waterRations, "totAvailableWater": totalAvailableWater });
-            });
-            
-        } else {
-            callback(err);
-        }
-    });
-};
+ 
 
-//function to create a bunch of rations/food packet which can be consumed in a day as per needed callory
-var findFoodPacketSeries = function (rationListObjectParam, rationDayTs, neededCalory, parentWhileCallback){
-    var dayRation = [];  // temp variable which holds rastion of the day
-    var rationListObject = rationListObjectParam; // array of available ration 
-    var remaningRationObject = { 
-        foodRation: [], // temp array of the ration , which dosen't get consumed in current day/loop
-        totAvailableCalory: 0 //total callory which is availbale from food packets
-        }; 
 
-    //using async series, to make sure each process executes completely before another starts    
-    async.series(
-        [
-            //first block of series will try to find/consume the food packets which are going to expire on given date itself. if that is the case , we will add them in given date ration
-            function(seriesCB){
-                //execute a aync for-each loop to go each packet of the food
-                async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                    //if needed calory is more then total availaible calory , nothing can be done . rationing is not possible further
-                    if (neededCalory > rationListObject.totAvailableCalory && rationDayTs == eachPacket.expiryDateTs) {
-                        forEachCallback("done");
-                    //else if needed callory is greater then 0 , and packet is going to expire by today
-                    } else if (neededCalory > 0 && rationDayTs == eachPacket.expiryDateTs){
-                        dayRation.push(eachPacket); //add food packet to the today ration stack
-                        neededCalory -= parseInt(eachPacket.calories); //subtract the needed calory by packest calory
-                        forEachCallback();    
-                    //if food packet is not going to expire today , add it to un-used/remaning ration stack
-                    } else if (eachPacket.expiryDateTs>rationDayTs){
-                        remaningRationObject.foodRation.push(eachPacket); //add food packet to remaning ration stack
-                        remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories); //add packet calory to available calory
-                        forEachCallback();
-                    }
-                    
-                }, function (err) {
-                    if (err){
-                    } 
-                    //reset foodration with remaning food ration , so that it can be used in next block of series
-                    rationListObject.foodRation = remaningRationObject.foodRation;
-                    //reset total available ration with un-used/ramaing calories
-                    rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
-                    //reset remaing ration object to default one
-                    remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-                    seriesCB();
-                });
-                
-            },
-            //block of series which identifies best needed food packet as per needed calory.
-            function (seriesCB){
-                //if still we need some calory to survive
-                if (neededCalory>0){
-                    //execute a aync for-each loop to go each packet of the food, and find best fit packet as per needed caloory
-                    async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                        //if packet callory is equals to needed callory
-                        if (eachPacket.calories == neededCalory) {
-                            neededCalory = neededCalory - parseInt(eachPacket.calories);
-                            dayRation.push(eachPacket);
-                        } else {
-                            remaningRationObject.foodRation.push(eachPacket);
-                            remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories);
-                            
-                        }
-                        forEachCallback();
-                    }, function (err) {
-                        if (err) {
-                        }
-                        
-                        rationListObject.foodRation = remaningRationObject.foodRation;
-                        rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
-                        remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-                        seriesCB();
-                    });
-                }else{
-                    seriesCB();
-                }
-                
-            },
-            //get the food packet , which serves nearest calory to the needed food callory
-            function (seriesCB){
-                
-                if (rationListObject.foodRation.length > 0 && neededCalory>0){
-                    var selectedKey = ""; //index of selected food packet, it may change as loop proceeds
-                    var diff = neededCalory; //diff in calory which is needed
-                    
-                    //loop through the ration object , to go by each food packet. and get nearest calory packet to the needed calory
-                    async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                        
-                        var newdiff = Math.abs(neededCalory - eachPacket.calories);
-                        //if no index is selected or diff in calory from curr packet is less then previous packet
-                        if (selectedKey == "" || newdiff < diff) {
-                            selectedKey = key;
-                            diff = newdiff;
-                        } 
-                                               
-                        forEachCallback();
-                    }, function (err) {
-                        if (err) {
-                        }
-                        
-                        //if (selectedKey!=""){
-                            dayRation.push(rationListObject.foodRation[selectedKey]);
-                            neededCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
-                            rationListObject.totAvailableCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
-                            rationListObject.foodRation.splice(selectedKey, 1);
-                            remaningRationObject = { foodRation: rationListObject.foodRation, totAvailableCalory: rationListObject.totAvailableCalory };    
-                            
-                        //}
-                        
-                        seriesCB();
-                    });    
-                    
-                }else{
-                    remaningRationObject = { foodRation: rationListObject.foodRation, totAvailableCalory: rationListObject.totAvailableCalory };    
-                    seriesCB();
-                    
-                }
-                
-            },
-            
-            function (seriesCB){
-                //recursively call function if still needed caloory is greater then 0, and there calory available to allocate
-                if (neededCalory > 0 && rationListObjectParam.totAvailableCalory > neededCalory){
-                    var x = findFoodPacketSeries(rationListObject, rationDayTs, neededCalory, seriesCB);
-                    remaningRationObject.foodRation = x.remaningRationObject.foodRation;
-                    remaningRationObject.totAvailableCalory = x.remaningRationObject.totAvailableCalory;
-                    //console.log(neededCalory+ ">>>>>>>>>>" + x.dayRation + "------------" + dayRation + "<<<<<<<<<<<<<<<<");
-                    dayRation = dayRation.concat(x.dayRation);
-                    
-                    neededCalory = x.neededCalory;
-                    x.whileCallbackOne();
-                }else{
-                    seriesCB();
-                }
-            }
-        ], function (error, data) {
-                
-                if (error) {
-                    
-                } 
-                
-            }
-        );
-        
-    return { "whileCallbackOne": parentWhileCallback,  rationDayTs: rationDayTs, remaningRationObject: remaningRationObject, neededCalory: neededCalory, dayRation: dayRation };
-}
 
-var findWaterPacketSeries = function (rationListObjectParam, dayRation, neededWater, parentWhileCallback) {
-    //var dayRation = [];
-    var rationListObject = rationListObjectParam;
-    var remaningRationObject = { waterRation: [], totAvailableWater: 0 };
 
-    async.series(
-        [
-            
-            function (seriesCB) {
-                //get water packet which get fits exactly to the needed water
-                async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
-                    if (eachPacket.liters == neededWater) {
-                        neededWater = neededWater - parseInt(eachPacket.liters);
-                        dayRation.push(eachPacket);
-                    } else {
-                        remaningRationObject.waterRation.push(eachPacket);
-                        remaningRationObject.totAvailableWater += parseInt(eachPacket.liters);
 
-                    }
-                    forEachCallback();
-                }, function (err) {
-                   
 
-                    rationListObject.waterRation = remaningRationObject.waterRation;
-                    rationListObject.totAvailableWater = remaningRationObject.totAvailableWater;
-                    remaningRationObject = { waterRation: [], totAvailableWater: 0 };
-                    seriesCB();
-                });
 
-            },
-            function (seriesCB) {
 
-                if (rationListObject.waterRation.length > 0 && neededWater > 0) {
-                    var selectedKey = "";
-                    var diff = neededWater;
-                    async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
-                        var newdiff = Math.abs(neededWater - eachPacket.liters);
-                        //if no index is selected or diff in liters from curr packet is less then previous packet
-                        if (selectedKey == "" || newdiff < diff) {
-                            selectedKey = key;
-                            diff = newdiff;
-                        } 
 
-                        forEachCallback();
-                    }, function (err) {
-                        
-
-                        //if (selectedKey!=""){
-                        dayRation.push(rationListObject.waterRation[selectedKey]);
-                        neededWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
-                        rationListObject.totAvailableWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
-                        rationListObject.waterRation.splice(selectedKey, 1);
-                        remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
-
-                        //}
-
-                        seriesCB();
-                    });
-
-                } else {
-                    remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
-                    seriesCB();
-
-                }
-
-            },
-            function (seriesCB) {
-
-                if (neededWater > 0 && rationListObjectParam.totAvailableWater >= neededWater) {
-                    var x = findWaterPacketSeries(rationListObject, dayRation, neededWater, seriesCB);
-                    remaningRationObject.waterRation = x.remaningRationObject.waterRation;
-                    remaningRationObject.totAvailableWater = x.remaningRationObject.totAvailableWater;
-                    //console.log(neededCalory+ ">>>>>>>>>>" + x.dayRation + "------------" + dayRation + "<<<<<<<<<<<<<<<<");
-                    //dayRation = dayRation.concat(x.dayRation);
-                    dayRation = x.dayRation;
-
-                    neededWater = x.neededWater;
-                    x.whileCallbackOne();
-                } else {
-                    seriesCB();
-                }
-            }
-        ], function (error, data) {
-
-            if (error) {
-
-            }
-
-        }
-    );
-
-    return { "whileCallbackOne": parentWhileCallback, remaningRationObject: remaningRationObject, neededWater: neededWater, dayRation: dayRation };
-}
-module.exports = {
+var self=module.exports = {
     //validate method , which returns a middleware to check the validation of the fields
     validate:(method)=>{
         switch (method) {
@@ -368,12 +102,18 @@ module.exports = {
         
     },
     getAll: (req, res) => {
+        let result = {};
+        let status = 201;
         //get all type of ration
         Ration.find({}, (err, rations) => {
             if (!err) {
                 res.send(rations);
+                res.status(status).send(rations);
             } else {
-            console.log('Error', err);
+                status = 500;
+                result.status = status;
+                result.error = err;
+                res.status(status).send(result);
             }
         });
         
@@ -422,8 +162,8 @@ module.exports = {
                 function (seriesCallback) {
                     
                     async.parallel({
-                        foodRation: getFoodRationPackets.bind(null,startDate), //get all food packets
-                        waterRation: getWaterRationpackets //get all water packets
+                        foodRation: self.getFoodRationPackets.bind(null,startDate), //get all food packets
+                        waterRation: self.getWaterRationpackets //get all water packets
                     }, function (err, rationList) {
                         //create a generalised object of the packets which will be used for the rationing
                         rationListObject = { "foodRation": rationList.foodRation.packets,
@@ -465,7 +205,7 @@ module.exports = {
                         * it will return a object which contains the food packets available ,and calories available from them. 
                         * And contains array of food packets which has to be consumed for the given day
                         */
-                        var neededFoodPckts = findFoodPacketSeries(rationListObject, rationForDay, 2500, whilstCallBackOne);
+                        var neededFoodPckts = self.findFoodPacketSeries(rationListObject, rationForDay, 2500, whilstCallBackOne);
                         
                         //reset ration list with unused food packets , it will be used in next days/loops
                         rationListObject.foodRation = neededFoodPckts.remaningRationObject.foodRation; 
@@ -482,7 +222,7 @@ module.exports = {
                         * param 4 (neededFoodPckts.whileCallbackOne): call back function to ensure loop is executed completed
                         * it will return a object with remaning water water ration and total available water in liters
                         */
-                        var neededWaterPckts = findWaterPacketSeries(rationListObject, neededFoodPckts.dayRation, 2, neededFoodPckts.whileCallbackOne);
+                        var neededWaterPckts = self.findWaterPacketSeries(rationListObject, neededFoodPckts.dayRation, 2, neededFoodPckts.whileCallbackOne);
                         
                         //reset ration list with un-used water packets
                         rationListObject.waterRation = neededWaterPckts.remaningRationObject.waterRation;
@@ -518,5 +258,278 @@ module.exports = {
                 res.status(status).send(result);
             }
         );
+    },
+    //get list of food packets which are not expired 
+    getFoodRationPackets:(startDate, callback)=> {
+
+        Ration.find({ "packageType": "Food", expiryDate: { $gte: dateFormat(startDate, "yyyy-mm-dd") } }, null, { sort: { expiryDate: 1, calories: -1 } }, (err, foodRations) => {
+            if (!err) {
+                var totalAvailableCalory = 0;
+                //loop through each food packet to add timestamp
+                async.forEachOf(foodRations, function (eachPacket, key, forEachCallback) {
+                    totalAvailableCalory = parseInt(totalAvailableCalory) + parseInt(eachPacket.calories);
+                    eachPacket.expiryDateTs = new Date(new Date(eachPacket.expiryDate).toDateString()).getTime();
+                    forEachCallback();
+                }, function (err) {
+                    if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                    callback(null, { "packets": foodRations, "totAvailableCalory": totalAvailableCalory });
+                });
+
+            } else {
+                callback(err);
+            }
+        });
+    },
+    //get water packets
+    getWaterRationpackets: (callback)=> {
+        Ration.find({ "packageType": "Water" }, (err, waterRations) => {
+            if (!err) {
+                var totalAvailableWater = 0;
+                async.forEachOf(waterRations, function (eachPacket, key, forEachCallback) {
+                    totalAvailableWater += parseInt(eachPacket.liters);
+                    forEachCallback();
+                }, function (err) {
+                    if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                    callback(null, { "packets": waterRations, "totAvailableWater": totalAvailableWater });
+                });
+
+            } else {
+                callback(err);
+            }
+        });
+    },
+    //function to create a bunch of rations/food packet which can be consumed in a day as per needed callory
+    findFoodPacketSeries:(rationListObjectParam, rationDayTs, neededCalory, parentWhileCallback)=> {
+        var dayRation = [];  // temp variable which holds rastion of the day
+        var rationListObject = rationListObjectParam; // array of available ration 
+        var remaningRationObject = {
+            foodRation: [], // temp array of the ration , which dosen't get consumed in current day/loop
+            totAvailableCalory: 0 //total callory which is availbale from food packets
+        };
+        //using async series, to make sure each process executes completely before another starts    
+        async.series(
+            [
+                //first block of series will try to find/consume the food packets which are going to expire on given date itself. if that is the case , we will add them in given date ration
+                function (seriesCB) {
+                    //execute a aync for-each loop to go each packet of the food
+                    async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
+                        //if needed calory is more then total availaible calory , nothing can be done . rationing is not possible further
+                        if (neededCalory > rationListObject.totAvailableCalory && rationDayTs == eachPacket.expiryDateTs) {
+                            forEachCallback("done");
+                            //else if needed callory is greater then 0 , and packet is going to expire by today
+                        } else if (neededCalory > 0 && rationDayTs == eachPacket.expiryDateTs) {
+                            dayRation.push(eachPacket); //add food packet to the today ration stack
+                            neededCalory -= parseInt(eachPacket.calories); //subtract the needed calory by packest calory
+                            forEachCallback();
+                            //if food packet is not going to expire today , add it to un-used/remaning ration stack
+                        } else if (eachPacket.expiryDateTs > rationDayTs) {
+                            remaningRationObject.foodRation.push(eachPacket); //add food packet to remaning ration stack
+                            remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories); //add packet calory to available calory
+                            forEachCallback();
+                        }
+
+                    }, function (err) {
+                        if (err) {
+                        }
+                        //reset foodration with remaning food ration , so that it can be used in next block of series
+                        rationListObject.foodRation = remaningRationObject.foodRation;
+                        //reset total available ration with un-used/ramaing calories
+                        rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
+                        //reset remaing ration object to default one
+                        remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
+                        seriesCB();
+                    });
+
+                },
+                //block of series which identifies best needed food packet as per needed calory.
+                function (seriesCB) {
+                    //if still we need some calory to survive
+                    if (neededCalory > 0) {
+                        //execute a aync for-each loop to go each packet of the food, and find best fit packet as per needed caloory
+                        async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
+                            //if packet callory is equals to needed callory
+                            if (eachPacket.calories == neededCalory) {
+                                neededCalory = neededCalory - parseInt(eachPacket.calories);
+                                dayRation.push(eachPacket);
+                            } else {
+                                remaningRationObject.foodRation.push(eachPacket);
+                                remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories);
+
+                            }
+                            forEachCallback();
+                        }, function (err) {
+                            if (err) {
+                            }
+
+                            rationListObject.foodRation = remaningRationObject.foodRation;
+                            rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
+                            remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
+                            seriesCB();
+                        });
+                    } else {
+                        seriesCB();
+                    }
+
+                },
+                //get the food packet , which serves nearest calory to the needed food callory
+                function (seriesCB) {
+
+                    if (rationListObject.foodRation.length > 0 && neededCalory > 0) {
+                        var selectedKey = ""; //index of selected food packet, it may change as loop proceeds
+                        var diff = neededCalory; //diff in calory which is needed
+
+                        //loop through the ration object , to go by each food packet. and get nearest calory packet to the needed calory
+                        async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
+
+                            var newdiff = Math.abs(neededCalory - eachPacket.calories);
+                            //if no index is selected or diff in calory from curr packet is less then previous packet
+                            if (selectedKey == "" || newdiff < diff) {
+                                selectedKey = key;
+                                diff = newdiff;
+                            }
+
+                            forEachCallback();
+                        }, function (err) {
+                            if (err) {
+                            }
+
+                            //if (selectedKey!=""){
+                            dayRation.push(rationListObject.foodRation[selectedKey]);
+                            neededCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
+                            rationListObject.totAvailableCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
+                            rationListObject.foodRation.splice(selectedKey, 1);
+                            remaningRationObject = { foodRation: rationListObject.foodRation, totAvailableCalory: rationListObject.totAvailableCalory };
+
+                            //}
+
+                            seriesCB();
+                        });
+
+                    } else {
+                        remaningRationObject = { foodRation: rationListObject.foodRation, totAvailableCalory: rationListObject.totAvailableCalory };
+                        seriesCB();
+
+                    }
+
+                },
+
+                function (seriesCB) {
+                    //recursively call function if still needed caloory is greater then 0, and there calory available to allocate
+                    if (neededCalory > 0 && rationListObjectParam.totAvailableCalory > neededCalory) {
+                        var x = self.findFoodPacketSeries(rationListObject, rationDayTs, neededCalory, seriesCB);
+                        remaningRationObject.foodRation = x.remaningRationObject.foodRation;
+                        remaningRationObject.totAvailableCalory = x.remaningRationObject.totAvailableCalory;
+                        //console.log(neededCalory+ ">>>>>>>>>>" + x.dayRation + "------------" + dayRation + "<<<<<<<<<<<<<<<<");
+                        dayRation = dayRation.concat(x.dayRation);
+
+                        neededCalory = x.neededCalory;
+                        x.whileCallbackOne();
+                    } else {
+                        seriesCB();
+                    }
+                }
+            ], function (error, data) {
+
+                if (error) {
+
+                }
+
+            }
+        );
+
+        return { "whileCallbackOne": parentWhileCallback, rationDayTs: rationDayTs, remaningRationObject: remaningRationObject, neededCalory: neededCalory, dayRation: dayRation };
+    },
+    findWaterPacketSeries :(rationListObjectParam, dayRation, neededWater, parentWhileCallback) =>{
+        
+        //var dayRation = [];
+        var rationListObject = rationListObjectParam;
+        var remaningRationObject = { waterRation: [], totAvailableWater: 0 };
+
+        async.series(
+            [
+
+                function (seriesCB) {
+                    //get water packet which get fits exactly to the needed water
+                    async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
+                        if (eachPacket.liters == neededWater) {
+                            neededWater = neededWater - parseInt(eachPacket.liters);
+                            dayRation.push(eachPacket);
+                        } else {
+                            remaningRationObject.waterRation.push(eachPacket);
+                            remaningRationObject.totAvailableWater += parseInt(eachPacket.liters);
+
+                        }
+                        forEachCallback();
+                    }, function (err) {
+
+
+                        rationListObject.waterRation = remaningRationObject.waterRation;
+                        rationListObject.totAvailableWater = remaningRationObject.totAvailableWater;
+                        remaningRationObject = { waterRation: [], totAvailableWater: 0 };
+                        seriesCB();
+                    });
+
+                },
+                function (seriesCB) {
+
+                    if (rationListObject.waterRation.length > 0 && neededWater > 0) {
+                        var selectedKey = "";
+                        var diff = neededWater;
+                        async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
+                            var newdiff = Math.abs(neededWater - eachPacket.liters);
+                            //if no index is selected or diff in liters from curr packet is less then previous packet
+                            if (selectedKey == "" || newdiff < diff) {
+                                selectedKey = key;
+                                diff = newdiff;
+                            }
+
+                            forEachCallback();
+                        }, function (err) {
+
+
+                            //if (selectedKey!=""){
+                            dayRation.push(rationListObject.waterRation[selectedKey]);
+                            neededWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
+                            rationListObject.totAvailableWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
+                            rationListObject.waterRation.splice(selectedKey, 1);
+                            remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
+
+                            //}
+
+                            seriesCB();
+                        });
+
+                    } else {
+                        remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
+                        seriesCB();
+
+                    }
+
+                },
+                function (seriesCB) {
+
+                    if (neededWater > 0 && rationListObjectParam.totAvailableWater >= neededWater) {
+                        var x = self.findWaterPacketSeries(rationListObject, dayRation, neededWater, seriesCB);
+                        remaningRationObject.waterRation = x.remaningRationObject.waterRation;
+                        remaningRationObject.totAvailableWater = x.remaningRationObject.totAvailableWater;
+
+                        dayRation = x.dayRation;
+
+                        neededWater = x.neededWater;
+                        x.whileCallbackOne();
+                    } else {
+                        seriesCB();
+                    }
+                }
+            ], function (error, data) {
+
+                if (error) {
+
+                }
+
+            }
+        );
+
+        return { "whileCallbackOne": parentWhileCallback, remaningRationObject: remaningRationObject, neededWater: neededWater, dayRation: dayRation };
     }
 }
