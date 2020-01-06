@@ -401,7 +401,7 @@ describe('/POST ration', () => {
             .send(ration)
             .end((err, res) => {
                 res.should.have.status(201);
-                console.log(res);
+               // console.log(res);
                 res.body.message.should.be.eq('Ration Added succesfully!');
                 done();
             });
