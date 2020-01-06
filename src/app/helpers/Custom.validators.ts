@@ -14,7 +14,9 @@ export class CustomValidators{
                 return null;
             }
             let val = control.value;
-
+            if(val==="" || val===null){
+                return null;
+            }
             if (isNaN(val) || /\D/.test(val.toString())) {
 
                 return { "number": true };
