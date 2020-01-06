@@ -16,6 +16,8 @@ You can find more info here - https://docs.google.com/document/d/12iUPtQJdN5tspz
     In case you want to run backend on any other url or port , you are free to do that. you only need to set API_URL variable in at location /project-folder/src/app/services/appConfig.ts 
     You just need to make appropriate changes against variable "API_URL".
     
+    In folder "martian-db" on project root , database dump is available.
+    
 ## Usage
 In this repo in root we are having front end of the application , which is built over angular 8 , and a Sub-folder named "martian-be" , "martian-be" is backend of the application which is built on the node.
 To execute front end of the system run command 
@@ -28,3 +30,10 @@ As the very first page communicates with backend and get some records from the d
 npm start
 ```
 it will start backend on localhost:3000
+
+## Test Case
+To execute test cases , reach to folder martian-be in terminal , and write following command 
+```javascript
+mocha
+```
+It will show test case status 

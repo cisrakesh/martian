@@ -1,31 +1,13 @@
 var assert = require('assert');
 var rationController = require('../Controllers/rationController');
 var expect  = require('chai').expect;
-var rationList={ 
-                "foodRation": { 
-                    "packets": [
-                        { "rationId": "F4", "packageType": "Food","calories": 1500, "expiryDate": "2020-05-05T18:30:00.000Z","expiryDateTs": 1588703400000 },
-                        { "rationId": "F1", "packageType": "Food","calories": 1000, "expiryDate": "2020-05-07T11:29:10.000Z","expiryDateTs": 1588789800000 }, 
-                        { "rationId": "F2", "packageType": "Food","calories": 2000, "expiryDate": "2020-06-05T18:30:00.000Z","expiryDateTs": 1591381800000 }, 
-                        { "rationId": "F3", "packageType": "Food","calories": 1000, "expiryDate": "2020-06-26T18:30:00.000Z","expiryDateTs": 1593196200000 }, 
-                        { "rationId": "F7", "packageType": "Food","calories": 1000, "expiryDate": "2020-07-02T18:30:00.000Z","expiryDateTs": 1593714600000 }, 
-                        { "rationId": "F6", "packageType": "Food","calories": 1500, "expiryDate": "2020-07-05T18:30:00.000Z","expiryDateTs": 1593973800000 }, 
-                        { "rationId": "f9", "packageType": "Food","calories": 100, "expiryDate": "2020-11-19T10:13:37.000Z","expiryDateTs": 1605724200000 }, 
-                        { "rationId": "F8", "packageType": "Food","calories": 400, "expiryDate": "2020-12-17T09:34:40.000Z","expiryDateTs": 1608143400000 }, 
-                        { "rationId": "F5", "packageType": "Food","calories": 1000, "expiryDate": "2020-12-30T18:30:00.000Z","expiryDateTs": 1609353000000 }
-                    ], 
-                    "totAvailableCalory": 9500 
-                }, 
-                "waterRation": { 
-                    "packets": [
-                        { "rationId": "W1", "packageType": "Water", "liters": 1,}, 
-                        { "rationId": "W2", "packageType": "Water", "liters": 2,},
-                        { "rationId": "W3", "packageType": "Water", "liters": 2,},
-                        { "rationId": "W4", "packageType": "Water", "liters": 1,}
-                    ], 
-                    "totAvailableWater": 6 
-                }
-            };
+var request = require('request');
+//Require the dev-dependencies
+let chai = require('chai');
+let chaiHttp = require('chai-http');
+let server = require('../app');
+let should = chai.should();
+chai.use(chaiHttp);
 describe('rationController', function () {
     //this.timeout(0);
     it('Checks that expired food should not get into the result', async ()=> {
@@ -294,4 +276,172 @@ describe('rationController', function () {
     });
     
     
+    
+});
+
+describe('Main page', function () {
+    it('status', function (done) {
+        request('http://localhost:3000/api/v1/ration-schedule', function (error, response, body) {
+            
+            expect(response.statusCode).to.equal(201);
+            done();
+        });
+    });
+});
+
+describe('/GET ration schedule', () => {
+    it('it should GET scheduled ration packets', (done) => {
+        chai.request(server)
+            .get('/api/v1/ration-schedule')
+            .end((err, res) => {
+                res.should.have.status(201);
+                // res.body.should.be.a('array');
+                // res.body.length.should.be.eql(0);
+                done();
+            });
+    });
+});
+
+
+describe('/POST ration', () => {
+    it('it should not add a ration without packetType field', (done) => {
+        let ration = {
+            packetId: "F11",
+            //packetType: "Food",
+            packetContent: "test",
+            calories:"2000",
+            expiryDate:"05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errors = JSON.parse(res.text);
+                errors.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
+    
+    it('calories should not be greater then 2500', (done) => {
+        let ration = {
+            packetId: "F11",
+            packetType: "Food",
+            packetContent: "test",
+            calories: "3500",
+            expiryDate: "05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errors = JSON.parse(res.text);
+                errors.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
+    
+    it('calories should not be less then 1', (done) => {
+        let ration = {
+            packetId: "F11",
+            packetType: "Food",
+            packetContent: "test",
+            calories: "0",
+            expiryDate: "05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errors = JSON.parse(res.text);
+                errors.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
+    
+    it('it should not add a ration if packetType field is other then Food or Water', (done) => {
+        let ration = {
+            packetId: "F11",
+            packetType: "Anything",
+            packetContent: "test",
+            calories: "1000",
+            expiryDate: "05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errorsJson = JSON.parse(res.text);
+                //console.log(res.text);
+                errorsJson.errors[0].should.have.property('msg').be.eq('Packet type should be Food or Water');
+
+                errorsJson.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
+
+    it('it should add a ration ', (done) => {
+        let ration = {
+            packetId: "F12",
+            packetType: "Food",
+            packetContent: "test",
+            calories: "1000",
+            expiryDate: "05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(201);
+                console.log(res);
+                res.body.message.should.be.eq('Ration Added succesfully!');
+                done();
+            });
+    });
+    
+    it('it should not add a ration for Packet type water and liters is not given ', (done) => {
+        let ration = {
+            packetId: "F12",
+            packetType: "Water",
+            packetContent: "test",
+            calories: "1000",
+            expiryDate: "05/12/2019",
+            //liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errors = JSON.parse(res.text);
+                errors.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
+    
+    it('it should not add a ration for Packet type Food and calories  is not given ', (done) => {
+        let ration = {
+            packetId: "F12",
+            packetType: "Food",
+            
+            liters:"5"
+        }
+        chai.request(server)
+            .post('/api/v1/ration')
+            .send(ration)
+            .end((err, res) => {
+                res.should.have.status(422);
+                var errors = JSON.parse(res.text);
+                errors.message.should.be.eq('Something Went wrong , please try again later');
+                done();
+            });
+    });
 });

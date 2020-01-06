@@ -2,7 +2,7 @@
 
 const mongoose = require('mongoose');
 const { Ration} = require('../models/ration');
-const { check, validationResult, oneOf } = require('express-validator');
+const { check, validationResult, oneOf, sanitize } = require('express-validator');
 var async = require("async");
 var dateFormat = require('dateformat');
 const connUri = process.env.MONGO_LOCAL_CONN_URL;
@@ -21,13 +21,18 @@ var self=module.exports = {
                     
                     oneOf([
                         [
+                            check('packetType', "Packet Type should be food").equals("Food"),
                             check('packetContent', "packet Content is required").exists().isLength({min:1}),
-                            check('calories', "Calories is required and should be number").exists().isInt({ min: 1 }),
-                            check('expiryDate', "Expiry date is required").exists()
+                            sanitize('calories').toInt(),
+                            check('calories', "Calories is required").exists().isLength({ min: 1 }),
+                            check('calories', "Calories should be between 1 to 2500").isInt({ min: 1 ,max:2500}),
+                            check('expiryDate', "Expiry date is required").exists().isLength({ min: 1 })
                             
                         ],
                         [
-                            check('liters', "Water quantity is required and should be number").exists().isInt({ min: 1 }),
+                            check('liters', "Water quantity is required and should be number").exists().isLength({ min: 1 }),
+                            check('liters', "Water quantity should be greter between 0 to 2").isInt({ min: 1, max: 2}),
+                            check('packetType', "Packet Type should be water").equals("Water")
                         ]
                         
                     ], "Please Fill Out All Fields"),
@@ -96,7 +101,6 @@ var self=module.exports = {
         //get all type of ration
         Ration.find({}, (err, rations) => {
             if (!err) {
-                res.send(rations);
                 res.status(status).send(rations);
             } else {
                 status = 500;
@@ -280,7 +284,6 @@ var self=module.exports = {
                     forEachCallback();
                 }, function (err) {
                     if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-                    console.log({ "packets": waterRations, "totAvailableWater": totalAvailableWater });
                     callback(null, { "packets": waterRations, "totAvailableWater": totalAvailableWater });
                 });
 

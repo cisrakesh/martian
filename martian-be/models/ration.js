@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const mongooseUniqueValidator = require('mongoose-unique-validator');
 const environment = process.env.NODE_ENV;
 const stage = require('../config')[environment];
 
@@ -11,8 +10,7 @@ const rationSchema = new Schema({
     rationId: {
         type: 'String',
         required: true,
-        trim: true,
-        unique: true
+        trim: true
     },
     packageType: {
         type: 'String',
@@ -41,7 +39,6 @@ const rationSchema = new Schema({
     }
     
 });
-rationSchema.plugin(mongooseUniqueValidator);
 
 const RationModel = mongoose.model('Ration', rationSchema);
 
