@@ -7,17 +7,6 @@ var async = require("async");
 var dateFormat = require('dateformat');
 const connUri = process.env.MONGO_LOCAL_CONN_URL;
 
-
- 
-
-
-
-
-
-
-
-
-
 var self=module.exports = {
     //validate method , which returns a middleware to check the validation of the fields
     validate:(method)=>{
@@ -282,6 +271,7 @@ var self=module.exports = {
     },
     //get water packets
     getWaterRationpackets: (callback)=> {
+
         Ration.find({ "packageType": "Water" }, (err, waterRations) => {
             if (!err) {
                 var totalAvailableWater = 0;
@@ -290,6 +280,7 @@ var self=module.exports = {
                     forEachCallback();
                 }, function (err) {
                     if (err) console.log(err, ">>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+                    console.log({ "packets": waterRations, "totAvailableWater": totalAvailableWater });
                     callback(null, { "packets": waterRations, "totAvailableWater": totalAvailableWater });
                 });
 
@@ -337,7 +328,7 @@ var self=module.exports = {
                         rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
                         //reset remaing ration object to default one
                         remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-                        seriesCB();
+                        seriesCB(null,"first series block");
                     });
 
                 },
@@ -345,29 +336,48 @@ var self=module.exports = {
                 function (seriesCB) {
                     //if still we need some calory to survive
                     if (neededCalory > 0) {
+                        var selectedKey="";
+                        var timeToExpire = rationDayTs;
+                        var calloryDiff = neededCalory; //diff in calory which is needed
                         //execute a aync for-each loop to go each packet of the food, and find best fit packet as per needed caloory
                         async.forEachOf(rationListObject.foodRation, function (eachPacket, key, forEachCallback) {
-                            //if packet callory is equals to needed callory
-                            if (eachPacket.calories == neededCalory) {
-                                neededCalory = neededCalory - parseInt(eachPacket.calories);
-                                dayRation.push(eachPacket);
-                            } else {
-                                remaningRationObject.foodRation.push(eachPacket);
-                                remaningRationObject.totAvailableCalory += parseInt(eachPacket.calories);
-
+                            var newTimeToExpire = Math.abs(eachPacket.expiryDateTs-rationDayTs );
+                            var newCalloryDiff = Math.abs(neededCalory - eachPacket.calories);
+                            //if packet callory is equals to needed callory ,and ( either no key is selected or current packet is expiring early)
+                            if (eachPacket.calories == neededCalory && (selectedKey === "" || newTimeToExpire < timeToExpire)) {
+                                selectedKey = key;
+                                timeToExpire = newTimeToExpire;
+                                calloryDiff = newCalloryDiff;
+                            //else if either no item selected or current packet is expiring early
+                            } else if(selectedKey === "" || newTimeToExpire < timeToExpire){
+                                //console.log(selectedKey + " == '' || " + newTimeToExpire + " < " + timeToExpire, ">>>elseif", selectedKey);
+                                selectedKey = key;
+                                timeToExpire = newTimeToExpire;
+                                calloryDiff = newCalloryDiff;
+                            //else if either no item selected or (current packet on same as before and current packet serves nearest needed callory )
+                            } else if (selectedKey === "" || (newTimeToExpire == timeToExpire && newCalloryDiff < calloryDiff)){
+                                selectedKey = key;
+                                timeToExpire = newTimeToExpire;
+                                calloryDiff = newCalloryDiff;
                             }
+                            
+                            
                             forEachCallback();
                         }, function (err) {
                             if (err) {
                             }
+                            if (selectedKey!==""){
+                                dayRation.push(rationListObject.foodRation[selectedKey]);
+                                neededCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
+                                rationListObject.totAvailableCalory -= parseInt(rationListObject.foodRation[selectedKey].calories);
+                                rationListObject.foodRation.splice(selectedKey, 1);
+                                remaningRationObject = { foodRation: [], totAvailableCalory: 0 };                                
+                            }
 
-                            rationListObject.foodRation = remaningRationObject.foodRation;
-                            rationListObject.totAvailableCalory = remaningRationObject.totAvailableCalory;
-                            remaningRationObject = { foodRation: [], totAvailableCalory: 0 };
-                            seriesCB();
+                            seriesCB(null, "second-1 series block");
                         });
                     } else {
-                        seriesCB();
+                        seriesCB(null, "second-2 series block");
                     }
 
                 },
@@ -402,12 +412,12 @@ var self=module.exports = {
 
                             //}
 
-                            seriesCB();
+                            seriesCB(null, "third-1 series block");
                         });
 
                     } else {
                         remaningRationObject = { foodRation: rationListObject.foodRation, totAvailableCalory: rationListObject.totAvailableCalory };
-                        seriesCB();
+                        seriesCB(null, "third-2 series block");
 
                     }
 
@@ -425,7 +435,7 @@ var self=module.exports = {
                         neededCalory = x.neededCalory;
                         x.whileCallbackOne();
                     } else {
-                        seriesCB();
+                        seriesCB(null, "fourth series block");
                     }
                 }
             ], function (error, data) {
@@ -433,7 +443,6 @@ var self=module.exports = {
                 if (error) {
 
                 }
-
             }
         );
 
@@ -445,18 +454,20 @@ var self=module.exports = {
         var rationListObject = rationListObjectParam;
         var remaningRationObject = { waterRation: [], totAvailableWater: 0 };
 
+
         async.series(
             [
 
                 function (seriesCB) {
                     //get water packet which get fits exactly to the needed water
                     async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
-                        if (eachPacket.liters == neededWater) {
-                            neededWater = neededWater - parseInt(eachPacket.liters);
+
+                        if (neededWater>0 && parseFloat(eachPacket.liters) == parseFloat(neededWater)) {
+                            neededWater = neededWater - parseFloat(eachPacket.liters);
                             dayRation.push(eachPacket);
                         } else {
                             remaningRationObject.waterRation.push(eachPacket);
-                            remaningRationObject.totAvailableWater += parseInt(eachPacket.liters);
+                            remaningRationObject.totAvailableWater += parseFloat(eachPacket.liters);
 
                         }
                         forEachCallback();
@@ -478,7 +489,7 @@ var self=module.exports = {
                         async.forEachOf(rationListObject.waterRation, function (eachPacket, key, forEachCallback) {
                             var newdiff = Math.abs(neededWater - eachPacket.liters);
                             //if no index is selected or diff in liters from curr packet is less then previous packet
-                            if (selectedKey == "" || newdiff < diff) {
+                            if (selectedKey === "" || newdiff < diff) {
                                 selectedKey = key;
                                 diff = newdiff;
                             }
@@ -487,14 +498,14 @@ var self=module.exports = {
                         }, function (err) {
 
 
-                            //if (selectedKey!=""){
-                            dayRation.push(rationListObject.waterRation[selectedKey]);
-                            neededWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
-                            rationListObject.totAvailableWater -= parseInt(rationListObject.waterRation[selectedKey].liters);
-                            rationListObject.waterRation.splice(selectedKey, 1);
-                            remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
+                            if (selectedKey!==""){
+                                dayRation.push(rationListObject.waterRation[selectedKey]);
+                                neededWater -= parseFloat(rationListObject.waterRation[selectedKey].liters);
+                                rationListObject.totAvailableWater -= parseFloat(rationListObject.waterRation[selectedKey].liters);
+                                rationListObject.waterRation.splice(selectedKey, 1);
+                                remaningRationObject = { waterRation: rationListObject.waterRation, totAvailableWater: rationListObject.totAvailableWater };
 
-                            //}
+                            }
 
                             seriesCB();
                         });
